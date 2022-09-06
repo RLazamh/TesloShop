@@ -6,11 +6,13 @@ import {
   Patch, 
   Param, 
   Delete, 
-  ParseUUIDPipe 
+  ParseUUIDPipe, 
+  Query
 } from '@nestjs/common';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { PagintationDto } from '../common/dtos';
 
 @Controller('product')
 export class ProductController {
@@ -22,18 +24,18 @@ export class ProductController {
   }
 
   @Get()
-  findAll() {
-    return this.productService.findAll();
+  findAll(@Query() pagintationDto : PagintationDto ) {
+    return this.productService.findAll( pagintationDto );
   }
 
-  @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.productService.findOne( id );
+  @Get(':term')
+  findOne(@Param('term') term: string) {
+    return this.productService.findOne( term );
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
-    return this.productService.update(+id, updateProductDto);
+    return this.productService.update( id, updateProductDto);
   }
 
   @Delete(':id')
