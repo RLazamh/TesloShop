@@ -5,7 +5,7 @@ import { validate as isUUID } from 'uuid'
 import { PagintationDto } from '../common/dtos';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { Product } from './entities';
+import { Product, ProductImage } from './entities';
 
 @Injectable()
 export class ProductService {
@@ -13,13 +13,21 @@ export class ProductService {
   constructor(
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    @InjectRepository(ProductImage)
+    private readonly productImageRepository: Repository<ProductImage>,
   ){}
 
   async create(createProductDto: CreateProductDto) {
     try {
-      const product = this.productRepository.create( createProductDto );
+      const { images = [] , ...productDetail } = createProductDto 
+      const product= this.productRepository.create({
+        ...productDetail,
+        images: images.map( (image) => this.productImageRepository.create({ url: image })) 
+      });
       await this.productRepository.save(product);
-      return product;
+
+      return {...product, images};
+
     } catch (error) {
       this.handleDBError( error )
     }
@@ -55,7 +63,8 @@ export class ProductService {
 
     const product = await this.productRepository.preload({
       id: id,
-      ...updateProductDto
+      ...updateProductDto,
+      images:[]
     })
     if( !product ) throw new NotFoundException(`Product with id ${ id } not exists`)
 
