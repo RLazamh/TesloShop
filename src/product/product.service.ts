@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { validate as isUUID } from 'uuid'
 import { PagintationDto } from '../common/dtos';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -15,6 +15,7 @@ export class ProductService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(ProductImage)
     private readonly productImageRepository: Repository<ProductImage>,
+    private readonly dataSource: DataSource,
   ){}
 
   async create(createProductDto: CreateProductDto) {
@@ -33,47 +34,89 @@ export class ProductService {
     }
   }
 
-  findAll( pagintationDto: PagintationDto) {
+  async findAll( pagintationDto: PagintationDto) {
     const { limit = 10 , offset = 0 } = pagintationDto;
-    return this.productRepository.find({
+    const products = await this.productRepository.find({
       take: limit,
       skip: offset,
-      // TODO Relationship
+      relations:{
+        images: true,
+      }
     });
-  }
 
+    return products.map( product => {
+      const newProduct = {
+        ...product,
+        images: product.images.map(image => image.url)
+      } 
+      return newProduct;
+    })
+  }
+  
   async findOne(term: string) : Promise<Product> {
     let product: Product;
     if( isUUID(term) ){
       product =  await this.productRepository.findOneBy({ id: term });
     } else {
-      const query = this.productRepository.createQueryBuilder();
+      const query = this.productRepository.createQueryBuilder('product'); // alias of table 
       product =  await query
         .where('LOWER(title) =LOWER(:title) or slug =:slug',{
           title: term,
           slug: term,
-        }).getOne();
+        })
+        .leftJoinAndSelect('product.images','productImages')
+        .getOne();
     }
     if( !product )
       throw new NotFoundException(`Product with term ${ term } not exists`)
     return product;
   }
 
+  async findOnePlane(term : string) {
+    const { images=[] , ...rest } = await this.findOne( term );
+
+    return {
+      ...rest,
+      images: images.map( image => image.url )
+
+    }
+  }
+
   async update(id: string, updateProductDto: UpdateProductDto) {
 
-    const product = await this.productRepository.preload({
-      id: id,
-      ...updateProductDto,
-      images:[]
-    })
-    if( !product ) throw new NotFoundException(`Product with id ${ id } not exists`)
+    const { images , ...toUpdate } = updateProductDto;
+
+    const product = await this.productRepository.preload({ id: id, ...toUpdate });
+    if( !product ) throw new NotFoundException(`Product with id ${ id } not exists`);
+
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    queryRunner.connect();
+    queryRunner.startTransaction();
 
     try {
-      await this.productRepository.save(product);
+
+      if( images ) {
+        await queryRunner.manager.delete(ProductImage , { product : id });
+        product.images = images.map( (image) => 
+          queryRunner.manager.create( ProductImage , { url: image })
+        ); 
+      } else {
+
+      }
+      await queryRunner.manager.save(product);
+      await queryRunner.commitTransaction();
+      await queryRunner.release();
+      // await this.productRepository.save(product);
+      
     } catch (error) {
+
+      await queryRunner.rollbackTransaction();
+      await queryRunner.release();
+
       this.handleDBError( error )      
     }
-    return product;
+    return this.findOnePlane( id );
   }
 
   async remove(id: string) {
