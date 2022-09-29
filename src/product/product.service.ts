@@ -120,8 +120,13 @@ export class ProductService {
   }
 
   async remove(id: string) {
-    const product = await this.findOne( id );
-    this.productRepository.remove( product );
+    try {
+      const product = await this.findOne( id );
+      this.productRepository.remove( product );
+    } catch (error) {
+      this.handleDBError( error );
+      
+    }
   }
 
   handleDBError( error: any ){
@@ -130,5 +135,22 @@ export class ProductService {
     
     this.logger.error(error);
     throw new BadRequestException(`Unexpected error, verify logs`);
+  }
+
+  async deleteAllProducts(){
+    const query = this.productRepository.createQueryBuilder('product');
+
+    try {
+      query
+        .delete()
+        .where({})
+        .execute();
+
+      return true;
+      
+    } catch (error) {
+      this.handleDBError(error);
+    }
+    
   }
 }
